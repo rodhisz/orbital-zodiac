@@ -18,7 +18,7 @@ import { supabase } from './lib/supabase';
 import {
   Plus, Users, User, Table as TableIcon, Share2,
   Trash2, Edit2, Save, X, Camera, Heart, Baby, Sun, Moon,
-  Divide, Settings, Download, Upload
+  Divide, Settings, Download, Upload, LogIn, LogOut, Lock, Unlock, ShieldCheck, UserCog
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
@@ -78,6 +78,83 @@ const getCroppedImg = async (imageSrc, pixelCrop) => {
 const nodeTypes = {
   familyMember: FamilyMemberNode,
   union: UnionNode
+};
+
+// Komponen Login Modal
+const LoginModal = ({ isOpen, onClose, onLoginSuccess }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
+      onLoginSuccess(data.user);
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Gagal login. Periksa email & password.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(10px)' }}>
+      <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="glass" style={{ width: '100%', maxWidth: '380px', padding: '30px', color: 'var(--text-main)' }}>
+        <div style={{ textAlign: 'center', marginBottom: '25px' }}>
+          <div style={{ background: 'var(--primary)', color: 'white', width: '50px', height: '50px', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 15px' }}>
+            <Lock size={24} />
+          </div>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Admin Login</h2>
+          <p style={{ fontSize: '0.85rem', opacity: 0.7 }}>Khusus pengelola silsilah keluarga</p>
+        </div>
+
+        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          <div>
+            <label style={{ fontSize: '0.8rem', opacity: 0.8, marginBottom: '5px', display: 'block' }}>Email</label>
+            <input 
+              type="email" 
+              className="glass" 
+              style={{ width: '100%', padding: '12px' }} 
+              value={email} 
+              onChange={e => setEmail(e.target.value)} 
+              required 
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: '0.8rem', opacity: 0.8, marginBottom: '5px', display: 'block' }}>Password</label>
+            <input 
+              type="password" 
+              className="glass" 
+              style={{ width: '100%', padding: '12px' }} 
+              value={password} 
+              onChange={e => setPassword(e.target.value)} 
+              required 
+            />
+          </div>
+          {error && <p style={{ color: '#ef4444', fontSize: '0.8rem', textAlign: 'center' }}>{error}</p>}
+          <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+            <button type="submit" disabled={loading} className="btn btn-primary" style={{ flex: 1, padding: '12px' }}>
+              {loading ? 'Masuk...' : 'Login'}
+            </button>
+            <button type="button" onClick={onClose} className="btn glass" style={{ flex: 1, padding: '12px' }}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
 };
 
 const App = () => {
@@ -160,6 +237,101 @@ const App = () => {
   const fileInputRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const isInitialLoad = useRef(true);
+  
+  // Auth & Roles States
+  const [user, setUser] = useState(null);
+  const [userRole, setUserRole] = useState(null); // 'super_admin', 'editor'
+  const [allProfiles, setAllProfiles] = useState([]); // Untuk list user di Settings
+  const [loadingProfiles, setLoadingProfiles] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+
+  const fetchUserRole = useCallback(async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .single();
+      
+      if (data) {
+        console.log("Role ditemukan:", data.role);
+        setUserRole(data.role);
+      } else if (error) {
+        console.warn("Gagal ambil role dari DB:", error.message);
+      }
+    } catch (err) {
+      console.error("Error in fetchUserRole:", err);
+    }
+  }, []);
+
+  // FAIL-SAFE: Jika DB gagal tapi email adalah hello@admin.com, paksa jadi super_admin
+  useEffect(() => {
+    if (user && user.email === 'hello@admin.com' && (userRole !== 'super_admin')) {
+      console.log("Safe-mode: Memaksa role super_admin untuk hello@admin.com");
+      setUserRole('super_admin');
+    }
+  }, [user, userRole]);
+
+  const fetchAllProfiles = useCallback(async () => {
+    if (userRole !== 'super_admin') return;
+    setLoadingProfiles(true);
+    try {
+      const { data, error } = await supabase.from('profiles').select('*');
+      if (error) {
+         console.warn("Gagal fetch profil:", error.message);
+      }
+      if (data) setAllProfiles(data);
+    } catch (err) {
+      console.error("Error fetching profiles:", err);
+    } finally {
+      setLoadingProfiles(false);
+    }
+  }, [userRole]);
+
+  const updateProfileRole = async (profileId, newRole) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: newRole })
+      .eq('id', profileId);
+    
+    if (!error) {
+      setAllProfiles(prev => prev.map(p => p.id === profileId ? { ...p, role: newRole } : p));
+    }
+  };
+
+  // Monitor Auth State
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const u = session?.user ?? null;
+      setUser(u);
+      if (u) fetchUserRole(u.id);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const u = session?.user ?? null;
+      setUser(u);
+      if (u) {
+        fetchUserRole(u.id);
+      } else {
+        setUserRole(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [fetchUserRole]);
+
+  useEffect(() => {
+    if (view === 'settings' && userRole === 'super_admin') {
+      fetchAllProfiles();
+    }
+  }, [view, userRole, fetchAllProfiles]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setUserRole(null);
+    if (view === 'settings') setView('tree');
+  };
 
   // Fungsi Fetch Data dari Supabase
   const fetchData = useCallback(async () => {
@@ -183,7 +355,7 @@ const App = () => {
         const currentData = JSON.parse(localStorage.getItem('familyData') || '[]');
         const toUpload = currentData;
         
-        if (toUpload.length > 0) {
+        if (toUpload.length > 0 && user) {
           const { error: insertError } = await supabase
             .from('family_members')
             .upsert(toUpload.map(m => ({
@@ -201,8 +373,8 @@ const App = () => {
           if (insertError) console.error('Gagal migrasi data:', insertError);
           setFamilyMembers(toUpload);
         } else {
-          // Jika DB kosong dan localStorage kosong, pastikan state kosong (bukan dummy)
-          setFamilyMembers([]);
+          // Jika DB kosong dan belum login, tampilkan data lokal saja
+          setFamilyMembers(toUpload);
         }
       }
     } catch (err) {
@@ -219,8 +391,8 @@ const App = () => {
   useEffect(() => {
     localStorage.setItem('familyData', JSON.stringify(familyMembers));
     
-    // Auto-sync ke Supabase: Ambil pendekatan Source-of-Truth dari state familyMembers
-    if (!loading) {
+    // Auto-sync ke Supabase: HANYA jika User Login
+    if (!loading && user) {
         if (isInitialLoad.current) {
             isInitialLoad.current = false;
             return;
@@ -649,7 +821,12 @@ const App = () => {
 
   // Logic Silsilah: Menghitung Node dan Edge
   const { layoutedNodes, layoutedEdges } = useMemo(() => {
-    const nodes = familyMembers.map((m) => ({
+    // URUTKAN data agar layout dagre selalu konsisten (tidak loncat-loncat setiap refresh)
+    const sortedMembers = [...familyMembers].sort((a, b) => 
+      a.id.toString().localeCompare(b.id.toString(), undefined, { numeric: true, sensitivity: 'base' })
+    );
+
+    const nodes = sortedMembers.map((m) => ({
       id: m.id,
       type: 'familyMember',
       data: { ...m },
@@ -660,7 +837,7 @@ const App = () => {
     const unionNodes = [];
     const processedUnions = new Set();
 
-    familyMembers.forEach((m) => {
+    sortedMembers.forEach((m) => {
       // Validasi: Apakah member ini ada di daftar nodes?
       const memberNode = nodes.find(n => n.id === m.id);
       if (!memberNode) return;
@@ -951,6 +1128,10 @@ const App = () => {
   };
 
   const confirmDelete = async () => {
+    if (!user) {
+        alert('Anda harus login untuk menghapus data.');
+        return;
+    }
     if (deleteTarget && deleteInput === deleteTarget.name) {
       setFamilyMembers(prev => prev.filter(p => p.id !== deleteTarget.id));
       
@@ -1286,6 +1467,10 @@ const App = () => {
   };
 
   const confirmResetApp = async () => {
+      if (!user) {
+          alert('Anda harus login untuk melakukan reset.');
+          return;
+      }
       localStorage.setItem('familyData', '[]');
       localStorage.removeItem('familyAppConfig');
       
@@ -1341,9 +1526,38 @@ const App = () => {
           <button className="btn glass" onClick={() => setShowKinshipModal(true)} style={{ color: 'var(--primary)' }}>
             <Users size={16} /> <span className="btn-text">Kalkulator Nasab</span>
           </button>
-          {view === 'tree' && (
-            <button className="btn btn-primary" onClick={handleAdd}>
-              <Plus size={16} /> <span className="btn-text">Tambah Anggota</span>
+          {user ? (
+            <>
+              {view === 'tree' && (
+                <button className="btn btn-primary" onClick={handleAdd}>
+                  <Plus size={16} /> <span className="btn-text">Tambah Anggota</span>
+                </button>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(0,0,0,0.05)', padding: '5px 12px', borderRadius: '10px' }}>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600 }}>{user.email}</div>
+                  <div style={{ 
+                    fontSize: '0.6rem', 
+                    fontWeight: 800,
+                    background: userRole === 'super_admin' ? '#0ea5e9' : 'rgba(0,0,0,0.1)',
+                    color: userRole === 'super_admin' ? 'white' : 'inherit',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    textTransform: 'uppercase',
+                    marginTop: '2px',
+                    display: 'inline-block'
+                  }}>
+                    {userRole ? (user.email === 'hello@admin.com' ? 'SUPER ADMIN (SAFE)' : userRole) : 'PELANGGAN'}
+                  </div>
+                </div>
+                <button className="btn glass" onClick={handleLogout} style={{ color: '#ef4444', padding: '8px' }} title="Keluar">
+                  <LogOut size={16} />
+                </button>
+              </div>
+            </>
+          ) : (
+            <button className="btn btn-primary" onClick={() => setShowLoginModal(true)}>
+              <LogIn size={16} /> <span className="btn-text">Login Admin</span>
             </button>
           )}
         </div>
@@ -1351,15 +1565,17 @@ const App = () => {
 
       <main style={{ flex: 1, position: 'relative', overflowY: view !== 'tree' ? 'auto' : 'hidden' }}>
         
-        {/* Tombol Pengaturan Mengambang di Pojok */}
-        <button 
-           className={`btn ${view === 'settings' ? 'btn-primary' : 'glass'}`} 
-           style={{ position: 'fixed', bottom: '20px', right: '20px', padding: '12px', zIndex: 9999, borderRadius: '50%', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} 
-           onClick={() => setView(view === 'settings' ? 'tree' : 'settings')} 
-           title="Pengaturan"
-        >
-          <Settings size={24} />
-        </button>
+        {/* Tombol Pengaturan Mengambang di Pojok (Hanya Admin) */}
+        {(userRole === 'super_admin' || userRole === 'admin') && (
+          <button 
+            className={`btn ${view === 'settings' ? 'btn-primary' : 'glass'}`} 
+            style={{ position: 'fixed', bottom: '20px', right: '20px', padding: '12px', zIndex: 9999, borderRadius: '50%', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} 
+            onClick={() => setView(view === 'settings' ? 'tree' : 'settings')} 
+            title="Pengaturan"
+          >
+            <Settings size={24} />
+          </button>
+        )}
 
         <AnimatePresence mode="wait">
           {view === 'tree' ? (
@@ -1371,7 +1587,7 @@ const App = () => {
                 onEdgesChange={onEdgesChange}
                 nodeTypes={nodeTypes}
                 onNodeClick={(_, node) => {
-                  if (node.type === 'familyMember') {
+                  if (node.type === 'familyMember' && user) {
                     handleEdit(node.data);
                   }
                 }}
@@ -1381,10 +1597,15 @@ const App = () => {
                 <Controls />
               </ReactFlow>
             </motion.div>
-          ) : view === 'settings' ? (
+          ) : ((userRole === 'super_admin' || userRole === 'admin') && view === 'settings') ? (
             <motion.div key="settings" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} style={{ padding: '20px', maxWidth: '800px', margin: '0 auto', width: '100%' }}>
                <div className="glass" style={{ padding: '30px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <h2 style={{ marginBottom: '10px' }}>Pengaturan Aplikasi</h2>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h2 style={{ marginBottom: '10px' }}>Pengaturan Aplikasi</h2>
+                    <span style={{ fontSize: '0.75rem', background: 'rgba(56, 189, 248, 0.2)', color: '#0ea5e9', padding: '4px 10px', borderRadius: '20px', fontWeight: 600 }}>
+                       <ShieldCheck size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} /> {userRole === 'super_admin' ? 'Super Admin' : 'Admin'}
+                    </span>
+                  </div>
                   
                   <div>
                     <label style={{ fontSize: '0.85rem', opacity: 0.7, marginBottom: '8px', display: 'block' }}>Nama Aplikasi</label>
@@ -1435,8 +1656,6 @@ const App = () => {
 
             <hr style={{ borderColor: 'var(--border-card)', margin: '20px 0' }} />
 
-            <hr style={{ borderColor: 'var(--border-card)', margin: '20px 0' }} />
-
                   <div style={{ background: 'rgba(239, 68, 68, 0.05)', padding: '20px', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
                       <h3 style={{ marginBottom: '10px', fontSize: '1.1rem', color: '#ef4444' }}>Zona Bahaya (Clear All)</h3>
                       <p style={{ fontSize: '0.85rem', opacity: 0.8, marginBottom: '15px' }}>
@@ -1445,6 +1664,64 @@ const App = () => {
                       <button className="btn" style={{ background: '#ef4444', color: 'white' }} onClick={handleResetApp}>
                         Kosongkan Total Aplikasi (Hapus Semua)
                       </button>
+                  </div>
+
+                  <hr style={{ borderColor: 'var(--border-card)', margin: '20px 0' }} />
+
+                  <div>
+                      <h3 style={{ marginBottom: '15px', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <UserCog size={20} /> Manajemen Pengguna
+                        <button className="btn glass" onClick={fetchAllProfiles} style={{ padding: '4px 8px', marginLeft: 'auto', fontSize: '0.7rem' }}>
+                           Dapatkan Data
+                        </button>
+                      </h3>
+                      <div className="glass" style={{ overflow: 'hidden', padding: '0' }}>
+                        <table style={{ width: '100%', fontSize: '0.85rem' }}>
+                           <thead style={{ background: 'rgba(0,0,0,0.05)' }}>
+                              <tr>
+                                <th style={{ padding: '12px', textAlign: 'left' }}>User Email</th>
+                                <th style={{ padding: '12px', textAlign: 'center' }}>Role</th>
+                                <th style={{ padding: '12px', textAlign: 'right' }}>Aksi</th>
+                              </tr>
+                           </thead>
+                           <tbody>
+                              {allProfiles.map(p => (
+                                <tr key={p.id} style={{ borderTop: '1px solid var(--border-card)' }}>
+                                  <td style={{ padding: '12px' }}>{p.email || p.id.substring(0,8)}</td>
+                                  <td style={{ padding: '12px', textAlign: 'center' }}>
+                                    <span style={{ 
+                                      padding: '2px 8px', 
+                                      borderRadius: '4px', 
+                                      fontSize: '0.7rem', 
+                                      background: p.role === 'super_admin' ? 'rgba(56, 189, 248, 0.1)' : 'rgba(168, 85, 247, 0.1)',
+                                      color: p.role === 'super_admin' ? '#0ea5e9' : '#a855f7',
+                                      fontWeight: 600
+                                    }}>
+                                      {p.role === 'super_admin' ? 'Super Admin' : 'Editor'}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '12px', textAlign: 'right' }}>
+                                    <select 
+                                      className="glass" 
+                                      value={p.role} 
+                                      onChange={(e) => updateProfileRole(p.id, e.target.value)}
+                                      disabled={p.id === user.id}
+                                      style={{ padding: '4px', fontSize: '0.75rem' }}
+                                    >
+                                      <option value="editor">Set as Editor</option>
+                                      <option value="super_admin">Set as Admin</option>
+                                    </select>
+                                  </td>
+                                </tr>
+                              ))}
+                           </tbody>
+                        </table>
+                      </div>
+                       {loadingProfiles ? (
+                          <p style={{ fontSize: '0.8rem', opacity: 0.5, marginTop: '10px' }}>Sedang mengambil data dari Database...</p>
+                       ) : allProfiles.length === 0 && (
+                          <p style={{ fontSize: '0.8rem', opacity: 0.5, marginTop: '10px' }}>Tabel Manajemen Pengguna tidak memiliki data. Jalankan kueri SQL untuk mendaftarkan akun Anda.</p>
+                       )}
                   </div>
 
                   <div style={{ textAlign: 'right', marginTop: '10px' }}>
@@ -1456,9 +1733,11 @@ const App = () => {
             <motion.div key="table" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} style={{ padding: '20px', maxWidth: '1100px', margin: '0 auto', width: '100%' }}>
               
               <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', alignItems: 'center' }}>
-                <button className="btn btn-primary" onClick={handleAdd} style={{ marginRight: 'auto' }}>
-                  <Plus size={16} /> <span className="btn-text">Tambah Anggota</span>
-                </button>
+                {user && (
+                  <button className="btn btn-primary" onClick={handleAdd} style={{ marginRight: 'auto' }}>
+                    <Plus size={16} /> <span className="btn-text">Tambah Anggota</span>
+                  </button>
+                )}
                 <div style={{ position: 'relative', width: '250px' }}>
                     <input 
                       placeholder="Cari nama..." 
@@ -1516,8 +1795,14 @@ const App = () => {
                         </td>
                         <td style={{ padding: '12px', textAlign: 'right' }}>
                           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                            <button className="btn glass" style={{ padding: '6px' }} onClick={() => handleEdit(m)}><Edit2 size={14} /></button>
-                            <button className="btn glass" style={{ padding: '6px', color: '#ef4444' }} onClick={() => handleDeleteData(m)}><Trash2 size={14} /></button>
+                            {user ? (
+                              <>
+                                <button className="btn glass" style={{ padding: '6px' }} onClick={() => handleEdit(m)}><Edit2 size={14} /></button>
+                                <button className="btn glass" style={{ padding: '6px', color: '#ef4444' }} onClick={() => handleDeleteData(m)}><Trash2 size={14} /></button>
+                              </>
+                            ) : (
+                              <span style={{ fontSize: '0.75rem', opacity: 0.5 }}><Lock size={12} /> Read-only</span>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1600,6 +1885,12 @@ const App = () => {
           )}
         </AnimatePresence>
       </main>
+
+      <LoginModal 
+        isOpen={showLoginModal} 
+        onClose={() => setShowLoginModal(false)} 
+        onLoginSuccess={(user) => setUser(user)} 
+      />
 
       {/* Edit Overlay */}
       {editingId && (
