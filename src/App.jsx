@@ -1577,6 +1577,12 @@ const App = () => {
           )}
         </div>
       </header>
+      {!supabase && (
+        <div style={{ background: '#fef2f2', color: '#ef4444', padding: '10px 30px', margin: '0 20px 20px', borderRadius: '12px', border: '1px solid #fee2e2', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', zIndex: 1000, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+          <ShieldCheck size={18} />
+          <span><strong>Koneksi Supabase Belum Aktif:</strong> Aplikasi saat ini berjalan dalam mode lokal (data tidak tersimpan di cloud). Silakan tambahkan <strong>VITE_SUPABASE_URL</strong> dan <strong>VITE_SUPABASE_ANON_KEY</strong> di dashboard Vercel Anda, lalu lakukan *redeploy*.</span>
+        </div>
+      )}
 
       <main style={{ flex: 1, position: 'relative', overflowY: view !== 'tree' ? 'auto' : 'hidden' }}>
         
