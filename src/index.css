@@ -76,26 +76,102 @@ body {
   transform: translateY(-1px);
 }
 
-/* Mobile Responsiveness */
+/* Mobile Responsiveness & Premium Polishing */
+/* Responsive Utility Classes */
+.desktop-only { display: block !important; }
+.mobile-only { display: none !important; }
+
+.desktop-label { display: inline !important; }
+.mobile-label { display: none !important; }
+
 @media (max-width: 768px) {
+  .desktop-only { display: none !important; }
+  .mobile-only { display: block !important; }
+
+  .desktop-label { display: none !important; }
+  .mobile-label { display: inline !important; }
+
+  .app-container {
+    overflow-x: hidden;
+  }
+  
   header {
-    flex-direction: column;
-    gap: 15px;
+    flex-direction: column !important;
+    gap: 12px !important;
     margin: 10px !important;
     padding: 15px !important;
-    align-items: flex-start !important;
+    align-items: stretch !important;
   }
-  nav {
+
+  .header-search-container {
+    order: 1;
+    margin: 0 !important;
+    max-width: none !important;
+  }
+
+  .nav-container {
+    order: 2;
     width: 100%;
-    overflow-x: auto;
-    padding-bottom: 5px;
-    display: flex !important;
-    gap: 8px !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    flex-wrap: wrap;
+    margin-top: 5px;
   }
-  .btn-text { display: none; }
-  .btn { padding: 8px; }
-  h1 { font-size: 1.2rem !important; }
+
+  .user-badge {
+    order: 3;
+    margin: 10px 0 0 0 !important;
+    width: 100%;
+    justify-content: center;
+    background: rgba(0,0,0,0.03) !important;
+  }
+
+  /* Compact buttons for mobile */
+  .btn-text { display: none !important; }
+  .btn { 
+    padding: 8px 10px !important;
+    min-width: 40px;
+  }
+
+  /* Table Action Row for mobile */
+  .table-action-row {
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 15px !important;
+  }
+
+  .table-tabs-container {
+    flex-direction: row !important; /* Keep buttons in a row on mobile too */
+    width: 100%;
+    display: flex !important;
+    justify-content: center;
+    gap: 5px;
+  }
+
+  h1 { font-size: 1.1rem !important; }
   .logo { display: none; }
+}
+
+/* UI Structure Helpers */
+.table-action-row {
+  display: flex !important; 
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 15px; 
+  margin-bottom: 20px;
+}
+
+.table-tabs-container {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 4px;
+}
+
+/* Base Utility Classes */
+.table-wrapper {
+  background: var(--bg-card);
+  backdrop-filter: blur(8px);
 }
 
 .family-node {

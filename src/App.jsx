@@ -16,8 +16,8 @@ import FamilyMemberNode from './components/CustomNode';
 import { familyData as initialData } from './data/familyData';
 import { supabase } from './lib/supabase';
 import {
-  Plus, Users, User, Table as TableIcon, Share2,
-  Trash2, Edit2, Save, X, Camera, Heart, Baby, Sun, Moon,
+  Plus, Users, User, Table as TableIcon, Share2, Trees,
+  Trash2, Edit2, Save, X, Camera, Heart, Baby, Sun, Moon, Search,
   Divide, Settings, Download, Upload, LogIn, LogOut, Lock, Unlock, ShieldCheck, UserCog
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -1303,6 +1303,10 @@ const App = () => {
     for (const s of (target.spouses || [])) {
         const bloodToPartner = getBloodRelationship(idMe, s.id);
         if (bloodToPartner && bloodToPartner !== 'Diri Sendiri') {
+            if (bloodToPartner === 'Anak') return 'Menantu';
+            if (bloodToPartner === 'Cucu') return 'Menantu Cucu';
+            if (bloodToPartner === 'Orang Tua') return 'Mertua';
+            if (bloodToPartner === 'Saudara Kandung') return 'Ipar';
             return `Pasangan ${bloodToPartner}`;
         }
     }
@@ -1311,12 +1315,11 @@ const App = () => {
     for (const s of (me.spouses || [])) {
         const bloodToPartner = getBloodRelationship(idTarget, s.id);
         if (bloodToPartner && bloodToPartner !== 'Diri Sendiri') {
-            // Jika partner saya adalah Anak-nya Target, maka saya adalah Menantu Target
             if (bloodToPartner === 'Anak') return 'Menantu';
             if (bloodToPartner === 'Cucu') return 'Menantu Cucu';
             if (bloodToPartner === 'Orang Tua') return 'Mertua';
             if (bloodToPartner === 'Saudara Kandung') return 'Ipar';
-            return `Pasangan ${bloodToPartner} (dari sisi Target)`;
+            return `Pasangan ${bloodToPartner}`;
         }
     }
 
@@ -1329,33 +1332,33 @@ const App = () => {
   const handleDownloadTemplate = () => {
     const data = [
         {
-            ID: 'M1',
+            ID: '1',
             Nama: 'Budi Santoso',
             'JenisKelamin(male/female)': 'male',
             'Lahir(YYYY-MM-DD)': '1980-01-01',
             'Wafat(YYYY-MM-DD)': '',
             ID_Ayah: '',
             ID_Ibu: '',
-            'Pasangan(ID|Status|Tanggal)': 'M2|married|1998-05-20'
+            'Pasangan(ID|Status|Tanggal)': '2|married|1998-05-20'
         },
         {
-            ID: 'M2',
+            ID: '2',
             Nama: 'Siti Aminah',
             'JenisKelamin(male/female)': 'female',
             'Lahir(YYYY-MM-DD)': '1982-05-15',
             'Wafat(YYYY-MM-DD)': '',
             ID_Ayah: '',
             ID_Ibu: '',
-            'Pasangan(ID|Status|Tanggal)': 'M1|married|1998-05-20'
+            'Pasangan(ID|Status|Tanggal)': '1|married|1998-05-20'
         },
         {
-            ID: 'M3',
+            ID: '3',
             Nama: 'Andi Santoso',
             'JenisKelamin(male/female)': 'male',
             'Lahir(YYYY-MM-DD)': '2005-10-10',
             'Wafat(YYYY-MM-DD)': '',
-            ID_Ayah: 'M1',
-            ID_Ibu: 'M2',
+            ID_Ayah: '1',
+            ID_Ibu: '2',
             'Pasangan(ID|Status|Tanggal)': ''
         }
     ];
@@ -1398,7 +1401,12 @@ const App = () => {
         
         return str;
     };
-    
+
+    const stripM = (val) => {
+        if (!val) return '';
+        return val.toString().replace(/[Mm]/g, '').trim();
+    };
+
     const reader = new FileReader();
     reader.onload = (evt) => {
         const bstr = evt.target.result;
@@ -1413,20 +1421,20 @@ const App = () => {
             const spousesArray = spouseStr ? spouseStr.split(',').map(s => {
                 const parts = s.trim().split('|');
                 return {
-                    id: parts[0] || '',
+                    id: stripM(parts[0]),
                     type: parts[1] || 'married',
                     marriageDate: normalizeDate(parts[2] || '')
                 };
             }).filter(s => s.id) : [];
 
             return {
-                id: row.ID?.toString() || row[keys[0]]?.toString() || `m${Date.now()}${Math.random()}`,
+                id: stripM(row.ID?.toString() || row[keys[0]]?.toString() || `${Date.now()}${(Math.random()*1000).toFixed(0)}`),
                 name: row.Nama || row[keys[1]] || 'Unknown',
                 gender: (row['JenisKelamin(male/female)'] || row.Gender || row[keys[2]] || 'male').toString().toLowerCase(),
                 birth: normalizeDate(row['Lahir(YYYY-MM-DD)'] || row.Lahir || row[keys[3]] || null),
                 death: normalizeDate(row['Wafat(YYYY-MM-DD)'] || row.Wafat || row[keys[4]] || null),
-                fatherId: row.ID_Ayah?.toString() || row.Ayah?.toString() || row[keys[5]]?.toString() || '',
-                motherId: row.ID_Ibu?.toString() || row.Ibu?.toString() || row[keys[6]]?.toString() || '',
+                fatherId: stripM(row.ID_Ayah?.toString() || row.Ayah?.toString() || row[keys[5]]?.toString() || ''),
+                motherId: stripM(row.ID_Ibu?.toString() || row.Ibu?.toString() || row[keys[6]]?.toString() || ''),
                 spouses: spousesArray,
                 photo: ''
             };
@@ -1513,51 +1521,44 @@ const App = () => {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }} className="nav-container">
-          <button className="btn glass" onClick={toggleTheme}>
-            {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+        <div style={{ flex: 1 }} />
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }} className="nav-container">
+          <button className="btn glass" onClick={toggleTheme} title="Tema">
+            {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           </button>
-          <button className={`btn ${view === 'tree' ? 'btn-primary' : ''}`} onClick={() => setView('tree')}>
-            <Share2 size={16} /> <span className="btn-text">Pohon</span>
-          </button>
-          <button className={`btn ${view === 'table' ? 'btn-primary' : ''}`} onClick={() => setView('table')}>
-            <TableIcon size={16} /> <span className="btn-text">Tabel</span>
-          </button>
+          <div style={{ display: 'flex', background: 'rgba(0,0,0,0.05)', padding: '4px', borderRadius: '10px', gap: '4px' }}>
+            <button className={`btn ${view === 'tree' ? 'btn-primary' : 'glass'}`} onClick={() => setView('tree')} style={{ padding: '8px 12px' }}>
+              <Trees size={16} /> <span className="btn-text">Pohon</span>
+            </button>
+            <button className={`btn ${view === 'table' ? 'btn-primary' : 'glass'}`} onClick={() => setView('table')} style={{ padding: '8px 12px' }}>
+              <TableIcon size={16} /> <span className="btn-text">Tabel</span>
+            </button>
+          </div>
           <button className="btn glass" onClick={() => setShowKinshipModal(true)} style={{ color: 'var(--primary)' }}>
-            <Users size={16} /> <span className="btn-text">Kalkulator Nasab</span>
+            <Users size={18} /> <span className="btn-text">Kalkulator</span>
           </button>
+          
           {user ? (
-            <>
-              {view === 'tree' && (
-                <button className="btn btn-primary" onClick={handleAdd}>
-                  <Plus size={16} /> <span className="btn-text">Tambah Anggota</span>
-                </button>
-              )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(0,0,0,0.05)', padding: '5px 12px', borderRadius: '10px' }}>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600 }}>{user.email}</div>
-                  <div style={{ 
-                    fontSize: '0.6rem', 
+            <div className="user-badge" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.05)', padding: '4px 10px', borderRadius: '12px', marginLeft: '10px' }}>
+                <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '0.7rem', fontWeight: 600, maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</span>
+                  <span style={{ 
+                    fontSize: '0.55rem', 
                     fontWeight: 800,
-                    background: userRole === 'super_admin' ? '#0ea5e9' : 'rgba(0,0,0,0.1)',
-                    color: userRole === 'super_admin' ? 'white' : 'inherit',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
+                    color: userRole === 'super_admin' ? '#0ea5e9' : 'var(--text-muted)',
                     textTransform: 'uppercase',
-                    marginTop: '2px',
-                    display: 'inline-block'
                   }}>
-                    {userRole ? (user.email === 'hello@admin.com' ? 'SUPER ADMIN (SAFE)' : userRole) : 'PELANGGAN'}
-                  </div>
+                    {user.email === 'hello@admin.com' ? 'SUPER ADMIN' : (userRole || 'PELANGGAN')}
+                  </span>
                 </div>
-                <button className="btn glass" onClick={handleLogout} style={{ color: '#ef4444', padding: '8px' }} title="Keluar">
-                  <LogOut size={16} />
+                <button className="btn glass" onClick={handleLogout} style={{ padding: '6px', minWidth: 'auto', border: 'none', background: 'transparent' }} title="Keluar">
+                  <LogOut size={16} style={{ color: '#ef4444' }} />
                 </button>
-              </div>
-            </>
+            </div>
           ) : (
             <button className="btn btn-primary" onClick={() => setShowLoginModal(true)}>
-              <LogIn size={16} /> <span className="btn-text">Login Admin</span>
+              <LogIn size={18} /> <span className="btn-text">Login</span>
             </button>
           )}
         </div>
@@ -1568,12 +1569,12 @@ const App = () => {
         {/* Tombol Pengaturan Mengambang di Pojok (Hanya Admin) */}
         {(userRole === 'super_admin' || userRole === 'admin') && (
           <button 
-            className={`btn ${view === 'settings' ? 'btn-primary' : 'glass'}`} 
+            className={`btn settings-btn ${view === 'settings' ? 'btn-primary' : 'glass'}`} 
             style={{ position: 'fixed', bottom: '20px', right: '20px', padding: '12px', zIndex: 9999, borderRadius: '50%', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} 
             onClick={() => setView(view === 'settings' ? 'tree' : 'settings')} 
             title="Pengaturan"
           >
-            <Settings size={24} />
+            <Settings size={28} />
           </button>
         )}
 
@@ -1732,29 +1733,40 @@ const App = () => {
           ) : (
             <motion.div key="table" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} style={{ padding: '20px', maxWidth: '1100px', margin: '0 auto', width: '100%' }}>
               
-              <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', alignItems: 'center' }}>
+              <div className="search-container-wrapper" style={{ marginBottom: '15px', maxWidth: '500px', width: '100%' }}>
+                  <div style={{ position: 'relative', width: '100%' }}>
+                      <input 
+                        placeholder="Cari nama keluarga..." 
+                        className="glass" 
+                        style={{ width: '100%', padding: '10px 15px 10px 40px', outline: 'none', borderRadius: '12px', border: '1px solid var(--border-card)' }} 
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                      />
+                      <Search size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
+                  </div>
+              </div>
+
+              <div className="table-action-row">
                 {user && (
-                  <button className="btn btn-primary" onClick={handleAdd} style={{ marginRight: 'auto' }}>
+                  <button className="btn btn-primary" onClick={handleAdd}>
                     <Plus size={16} /> <span className="btn-text">Tambah Anggota</span>
                   </button>
                 )}
-                <div style={{ position: 'relative', width: '250px' }}>
-                    <input 
-                      placeholder="Cari nama..." 
-                      className="glass" 
-                      style={{ width: '100%', padding: '8px 12px 8px 35px', outline: 'none' }} 
-                      value={searchTerm}
-                      onChange={e => setSearchTerm(e.target.value)}
-                    />
-                    <User size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
+                
+                <div className="table-tabs-container" style={{ display: 'flex', background: 'rgba(0,0,0,0.05)', padding: '4px', borderRadius: '12px', gap: '4px', marginLeft: 'auto', width: 'fit-content' }}>
+                    <button className={`btn ${tableTab === 'members' ? 'btn-primary' : 'glass'}`} onClick={() => setTableTab('members')}>Data Anggota</button>
+                    <button className={`btn ${tableTab === 'birthdays' ? 'btn-primary' : 'glass'}`} onClick={() => setTableTab('birthdays')}>
+                      🎂 <span className="desktop-label">Ulang Tahun</span><span className="mobile-label">Ultah</span>
+                    </button>
+                    <button className={`btn ${tableTab === 'anniversaries' ? 'btn-primary' : 'glass'}`} onClick={() => setTableTab('anniversaries')}>
+                      💍 <span className="desktop-label">Anniversary</span><span className="mobile-label">Aniv</span>
+                    </button>
                 </div>
-                <button className={`btn ${tableTab === 'members' ? 'btn-primary' : 'glass'}`} onClick={() => setTableTab('members')}>Data Anggota</button>
-                <button className={`btn ${tableTab === 'birthdays' ? 'btn-primary' : 'glass'}`} onClick={() => setTableTab('birthdays')}>🎂 Ulang Tahun</button>
-                <button className={`btn ${tableTab === 'anniversaries' ? 'btn-primary' : 'glass'}`} onClick={() => setTableTab('anniversaries')}>💍 Anniversary</button>
               </div>
 
               <div className="glass" style={{ padding: '24px', overflowX: 'auto', marginBottom: '40px' }}>
                 {tableTab === 'members' && (
+                  <div className="table-wrapper">
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid var(--border-card)', color: 'var(--text-muted)' }}>
@@ -1767,20 +1779,21 @@ const App = () => {
                     <tbody>
                       {familyMembers
                         .filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                        .sort((a, b) => a.id.toString().localeCompare(b.id.toString(), undefined, { numeric: true }))
                         .map(m => (
                         <tr key={m.id} style={{ borderBottom: '1px solid var(--border-card)' }}>
                           <td style={{ padding: '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             {m.photo ? (
-                              <img src={m.photo} alt="" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover' }} />
+                              <img src={m.photo} alt="" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
                             ) : (
-                              <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: m.gender === 'male' ? '#0ea5e9' : '#db2777', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>
+                              <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: m.gender === 'male' ? '#0ea5e9' : '#db2777', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', flexShrink: 0 }}>
                                 <User size={18} />
                               </div>
                             )}
                             <div>
-                              <div style={{ fontWeight: 600 }}>{m.name}</div>
-                              <div style={{ fontSize: '0.7rem', color: m.gender === 'male' ? 'var(--male-border)' : 'var(--female-border)' }}>{m.gender === 'male' ? 'LAKI-LAKI' : 'PEREMPUAN'}</div>
+                               <div style={{ fontWeight: 600 }}>{m.name}</div>
+                               <div style={{ fontSize: '0.7rem', color: m.gender === 'male' ? 'var(--male-border)' : 'var(--female-border)' }}>{m.gender === 'male' ? 'LAKI-LAKI' : 'PEREMPUAN'}</div>
                             </div>
                           </div>
                         </td>
@@ -1809,6 +1822,7 @@ const App = () => {
                     ))}
                   </tbody>
                 </table>
+              </div>
                 )}
 
                 {tableTab === 'birthdays' && (
@@ -2198,7 +2212,7 @@ const App = () => {
       {/* Kinship Calculator Modal */}
       {showKinshipModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)', padding: '20px' }}>
-          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass" style={{ width: '100%', maxWidth: '500px', padding: '30px', color: 'var(--text-main)' }}>
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass modal-content" style={{ width: '100%', maxWidth: '500px', padding: '30px', color: 'var(--text-main)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
                <h3 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '10px' }}>
                  <Users size={24} /> Kalkulator Hubungan Nasab
@@ -2210,7 +2224,7 @@ const App = () => {
               Pilih dua anggota keluarga untuk mengetahui hubungan kekerabatan di antara mereka secara otomatis.
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '25px' }}>
+            <div className="responsive-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '25px' }}>
                 <div>
                     <label style={{ fontSize: '0.75rem', opacity: 0.6, display: 'block', marginBottom: '8px' }}>Pilih &quot;Saya&quot;</label>
                     <select className="glass" value={kinshipSource} onChange={e => setKinshipSource(e.target.value)} style={{ width: '100%', padding: '12px', background: 'transparent', color: 'inherit' }}>
