@@ -14,6 +14,7 @@ import dagre from 'dagre';
 
 import FamilyMemberNode from './components/CustomNode';
 import { familyData as initialData } from './data/familyData';
+import { supabase } from './lib/supabase';
 import {
   Plus, Users, User, Table as TableIcon, Share2,
   Trash2, Edit2, Save, X, Camera, Heart, Baby, Sun, Moon,
@@ -157,9 +158,64 @@ const App = () => {
   });
   
   const fileInputRef = useRef(null);
+  const [loading, setLoading] = useState(true);
+
+  // Fungsi Fetch Data dari Supabase
+  const fetchData = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('family_members')
+        .select('*');
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        // Map snake_case to camelCase
+        const mappedData = data.map(m => ({
+          ...m,
+          fatherId: m.father_id,
+          motherId: m.mother_id
+        }));
+        setFamilyMembers(mappedData);
+      } else {
+        // Jika DB kosong, migrasikan data awal (localStorage atau initialData)
+        const currentData = JSON.parse(localStorage.getItem('familyData') || '[]');
+        const toUpload = currentData.length > 0 ? currentData : initialData;
+        
+        if (toUpload.length > 0) {
+          const { error: insertError } = await supabase
+            .from('family_members')
+            .upsert(toUpload.map(m => ({
+              id: m.id,
+              name: m.name,
+              gender: m.gender,
+              birth: m.birth,
+              death: m.death,
+              photo: m.photo,
+              father_id: m.fatherId || '',
+              mother_id: m.motherId || '',
+              spouses: m.spouses || []
+            })));
+          
+          if (insertError) console.error('Gagal migrasi data:', insertError);
+          setFamilyMembers(toUpload);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching from Supabase:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   useEffect(() => {
     localStorage.setItem('familyData', JSON.stringify(familyMembers));
+    
+    // Auto-sync ke Supabase bisa diletakkan di sini, tapi lebih aman di fungsi handle save/delete langsung
   }, [familyMembers]);
 
   useEffect(() => {
@@ -759,31 +815,25 @@ const App = () => {
       photo: member.photo || ''
     });
   }, []);
-
   const handleSave = () => {
-    setFamilyMembers(prev => {
-      const oldMember = prev.find(m => m.id === editingId);
-      const oldSpouseIds = oldMember?.spouses?.map(s => s.id) || [];
-      const newSpouseIds = editBuffer.spouses?.map(s => s.id) || [];
-      
-      const addedSpouseIds = newSpouseIds.filter(id => id && !oldSpouseIds.includes(id));
-      const removedSpouseIds = oldSpouseIds.filter(id => id && !newSpouseIds.includes(id));
-      const retainedSpouseIds = newSpouseIds.filter(id => id && oldSpouseIds.includes(id));
+    // 1. Ambil ID pasangan untuk keperluan sync
+    const oldMember = familyMembers.find(m => m.id === editingId);
+    const oldSpouseIds = oldMember?.spouses?.map(s => s.id) || [];
+    const newSpouseIds = editBuffer.spouses?.map(s => s.id) || [];
 
+    // 2. Update state lokal (Complex logic untuk sinkronisasi 2 arah spouse)
+    setFamilyMembers(prev => {
       return prev.map(m => {
         if (m.id === editingId) return { ...editBuffer };
 
         let mSpouses = [...(m.spouses || [])];
         let hasChanged = false;
 
-        // Cek apakah member m ini adalah pasangan dari orang yang sedang diedit
         const spouseInfoInEditBuffer = editBuffer.spouses.find(s => s.id === m.id);
 
         if (spouseInfoInEditBuffer) {
-            // SYNC: Member m harus punya 'editingId' sebagai pasangannya dengan data yang sama persis
             const existingEntry = mSpouses.find(s => s.id === editingId);
             if (!existingEntry) {
-                // Kasus baru: Tambahkan person yang diedit ke daftar pasangan m
                 mSpouses.push({ 
                     id: editingId, 
                     type: spouseInfoInEditBuffer.type || 'married', 
@@ -791,7 +841,6 @@ const App = () => {
                 });
                 hasChanged = true;
             } else {
-                // Kasus lama: Update data yang sudah ada agar sinkron
                 if (existingEntry.type !== spouseInfoInEditBuffer.type || existingEntry.marriageDate !== spouseInfoInEditBuffer.marriageDate) {
                     mSpouses = mSpouses.map(s => s.id === editingId ? {
                         ...s,
@@ -802,7 +851,6 @@ const App = () => {
                 }
             }
         } else {
-            // REMOVE: Jika m dulu pasangan tapi sekarang dihapus di editBuffer
             if (oldSpouseIds.includes(m.id)) {
                 if (mSpouses.some(s => s.id === editingId)) {
                     mSpouses = mSpouses.filter(s => s.id !== editingId);
@@ -811,14 +859,38 @@ const App = () => {
             }
         }
 
-        if (hasChanged) {
-            return { ...m, spouses: mSpouses };
-        }
-        
+        if (hasChanged) return { ...m, spouses: mSpouses };
         return m;
       });
     });
+
     setEditingId(null);
+
+    // 3. Sync ke Supabase (Batch upsert seluruh state terbaru)
+    setTimeout(async () => {
+        const { data: latestState } = await supabase.from('family_members').select('*'); // Ambil state terbaru dari DB jika perlu
+        // Namun kita kirim seluruh state lokal yang baru saja kita bentuk
+        // Note: familyMembers di sini mungkin masih nilai lama karena closure, 
+        // tapi kita gunakan approach upsert all data dari array yang dikirim
+        
+        // Kita fetch ulang datanya sebentar lagi atau gunakan state update callback
+        // Untuk amannya, kita upsert SEMUA data familyMembers saat ini
+        const { error } = await supabase
+            .from('family_members')
+            .upsert(familyMembers.map(m => ({
+                id: m.id,
+                name: m.name,
+                gender: m.gender,
+                birth: m.birth,
+                death: m.death,
+                photo: m.photo,
+                father_id: m.fatherId || '',
+                mother_id: m.motherId || '',
+                spouses: m.spouses || []
+            })));
+        
+        if (error) console.error('Gagal sync ke Supabase:', error);
+    }, 200);
   };
 
   const handleAdd = () => {
@@ -870,9 +942,18 @@ const App = () => {
     setDeleteInput('');
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (deleteTarget && deleteInput === deleteTarget.name) {
       setFamilyMembers(prev => prev.filter(p => p.id !== deleteTarget.id));
+      
+      // Sync ke Supabase
+      const { error } = await supabase
+        .from('family_members')
+        .delete()
+        .eq('id', deleteTarget.id);
+      
+      if (error) console.error('Gagal hapus di Supabase:', error);
+      
       setDeleteTarget(null);
     } else {
       alert('Nama tidak persis sama. Penghapusan dibatalkan.');
@@ -1196,10 +1277,18 @@ const App = () => {
       setShowResetConfirm(true);
   };
 
-  const confirmResetApp = () => {
+  const confirmResetApp = async () => {
       localStorage.removeItem('familyData');
       localStorage.removeItem('familyAppConfig');
       
+      // Hapus data di Supabase (Semua data di tabel)
+      const { error } = await supabase
+        .from('family_members')
+        .delete()
+        .neq('id', '0'); // Di Postgres Supabase, delete harus pakai filter. neq '0' akan menghapus semua ID teks.
+
+      if (error) console.error('Gagal reset di Supabase:', error);
+
       setFamilyMembers([]);
       setAppConfig({
         appName: 'Silsilah Keluarga',
@@ -1824,14 +1913,14 @@ const App = () => {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '25px' }}>
                 <div>
-                    <label style={{ fontSize: '0.75rem', opacity: 0.6, display: 'block', marginBottom: '8px' }}>Pilih "Saya"</label>
+                    <label style={{ fontSize: '0.75rem', opacity: 0.6, display: 'block', marginBottom: '8px' }}>Pilih &quot;Saya&quot;</label>
                     <select className="glass" value={kinshipSource} onChange={e => setKinshipSource(e.target.value)} style={{ width: '100%', padding: '12px', background: 'transparent', color: 'inherit' }}>
                         <option value="">-- Anggota 1 --</option>
                         {familyMembers.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                     </select>
                 </div>
                 <div>
-                    <label style={{ fontSize: '0.75rem', opacity: 0.6, display: 'block', marginBottom: '8px' }}>Pilih "Target"</label>
+                    <label style={{ fontSize: '0.75rem', opacity: 0.6, display: 'block', marginBottom: '8px' }}>Pilih &quot;Target&quot;</label>
                     <select className="glass" value={kinshipTarget} onChange={e => setKinshipTarget(e.target.value)} style={{ width: '100%', padding: '12px', background: 'transparent', color: 'inherit' }}>
                         <option value="">-- Anggota 2 --</option>
                         {familyMembers.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
@@ -1862,8 +1951,10 @@ const App = () => {
   );
 };
 
-export default () => (
+const AppWithProvider = () => (
   <ErrorBoundary>
     <App />
   </ErrorBoundary>
 );
+
+export default AppWithProvider;

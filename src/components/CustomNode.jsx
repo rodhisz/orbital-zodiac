@@ -3,41 +3,41 @@ import { Handle, Position } from '@xyflow/react';
 import { Heart, User, UserCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 
+// Custom Avatar Component
+const Avatar = ({ data, isMale }) => {
+    if (data.photo && !data.photo.includes('unsplash.com')) {
+        return <img src={data.photo} alt={data.name} className="node-avatar" />;
+    }
+
+    return (
+        <motion.div
+            className={`node-avatar placeholder ${data.gender}`}
+            animate={{
+                scale: [1, 1.05, 1],
+                rotate: [0, 2, -2, 0]
+            }}
+            transition={{
+                duration: 4,
+                repeat: Infinity,
+                ease: "easeInOut"
+            }}
+            style={{
+                background: isMale ? 'linear-gradient(135deg, #0ea5e9, #38bdf8)' : 'linear-gradient(135deg, #db2777, #f472b6)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                border: '2px solid white'
+            }}
+        >
+            <User size={24} />
+        </motion.div>
+    );
+};
+
 const FamilyMemberNode = ({ data }) => {
     const isDeceased = !!data.death;
     const isMale = data.gender === 'male';
-
-    // Custom Avatar Component
-    const Avatar = () => {
-        if (data.photo && !data.photo.includes('unsplash.com')) {
-            return <img src={data.photo} alt={data.name} className="node-avatar" />;
-        }
-
-        return (
-            <motion.div
-                className={`node-avatar placeholder ${data.gender}`}
-                animate={{
-                    scale: [1, 1.05, 1],
-                    rotate: [0, 2, -2, 0]
-                }}
-                transition={{
-                    duration: 4,
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                }}
-                style={{
-                    background: isMale ? 'linear-gradient(135deg, #0ea5e9, #38bdf8)' : 'linear-gradient(135deg, #db2777, #f472b6)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'white',
-                    border: '2px solid white'
-                }}
-            >
-                <User size={24} />
-            </motion.div>
-        );
-    };
 
     return (
         <div className={`family-node glass ${data.gender} ${isDeceased ? 'deceased' : ''}`}>
@@ -53,7 +53,7 @@ const FamilyMemberNode = ({ data }) => {
             <Handle type="source" position={Position.Right} id="right-source" style={{ right: 0, opacity: 0 }} />
 
             <div className="node-content">
-                <Avatar />
+                <Avatar data={data} isMale={isMale} />
                 <div className="node-info">
                     <div className="node-name">{data.name}</div>
                     <div className="node-dates">
