@@ -227,7 +227,7 @@ const App = () => {
       try { return JSON.parse(saved); } catch(e){}
     }
     return {
-      appName: 'Silsilah Keluarga',
+      appName: 'Fam Tree',
       tagline: 'Manajemen Nasab Dinamis',
       logoMode: 'icon',
       logoUrl: ''
@@ -1484,7 +1484,7 @@ const App = () => {
 
       setFamilyMembers([]);
       setAppConfig({
-        appName: 'Silsilah Keluarga',
+        appName: 'Fam Tree',
         tagline: 'Manajemen Nasab Dinamis',
         logoMode: 'icon',
         logoUrl: ''
