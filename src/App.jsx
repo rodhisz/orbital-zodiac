@@ -159,6 +159,7 @@ const App = () => {
   
   const fileInputRef = useRef(null);
   const [loading, setLoading] = useState(true);
+  const isInitialLoad = useRef(true);
 
   // Fungsi Fetch Data dari Supabase
   const fetchData = useCallback(async () => {
@@ -180,7 +181,7 @@ const App = () => {
       } else {
         // Jika DB kosong, migrasikan data awal (localStorage atau initialData)
         const currentData = JSON.parse(localStorage.getItem('familyData') || '[]');
-        const toUpload = currentData.length > 0 ? currentData : initialData;
+        const toUpload = currentData;
         
         if (toUpload.length > 0) {
           const { error: insertError } = await supabase
@@ -199,6 +200,9 @@ const App = () => {
           
           if (insertError) console.error('Gagal migrasi data:', insertError);
           setFamilyMembers(toUpload);
+        } else {
+          // Jika DB kosong dan localStorage kosong, pastikan state kosong (bukan dummy)
+          setFamilyMembers([]);
         }
       }
     } catch (err) {
@@ -215,8 +219,38 @@ const App = () => {
   useEffect(() => {
     localStorage.setItem('familyData', JSON.stringify(familyMembers));
     
-    // Auto-sync ke Supabase bisa diletakkan di sini, tapi lebih aman di fungsi handle save/delete langsung
-  }, [familyMembers]);
+    // Auto-sync ke Supabase: Ambil pendekatan Source-of-Truth dari state familyMembers
+    if (!loading) {
+        if (isInitialLoad.current) {
+            isInitialLoad.current = false;
+            return;
+        }
+
+        const syncToSupabase = async () => {
+            try {
+                const { error } = await supabase
+                    .from('family_members')
+                    .upsert(familyMembers.map(m => ({
+                        id: m.id,
+                        name: m.name,
+                        gender: m.gender,
+                        birth: m.birth,
+                        death: m.death,
+                        photo: m.photo,
+                        father_id: m.fatherId || '',
+                        mother_id: m.motherId || '',
+                        spouses: m.spouses || []
+                    })));
+                
+                if (error) console.error('Gagal auto-sync ke Supabase:', error);
+            } catch (err) {
+                console.error('Error in sync logic:', err);
+            }
+        };
+
+        syncToSupabase();
+    }
+  }, [familyMembers, loading]);
 
   useEffect(() => {
     localStorage.setItem('familyAppConfig', JSON.stringify(appConfig));
@@ -865,32 +899,6 @@ const App = () => {
     });
 
     setEditingId(null);
-
-    // 3. Sync ke Supabase (Batch upsert seluruh state terbaru)
-    setTimeout(async () => {
-        const { data: latestState } = await supabase.from('family_members').select('*'); // Ambil state terbaru dari DB jika perlu
-        // Namun kita kirim seluruh state lokal yang baru saja kita bentuk
-        // Note: familyMembers di sini mungkin masih nilai lama karena closure, 
-        // tapi kita gunakan approach upsert all data dari array yang dikirim
-        
-        // Kita fetch ulang datanya sebentar lagi atau gunakan state update callback
-        // Untuk amannya, kita upsert SEMUA data familyMembers saat ini
-        const { error } = await supabase
-            .from('family_members')
-            .upsert(familyMembers.map(m => ({
-                id: m.id,
-                name: m.name,
-                gender: m.gender,
-                birth: m.birth,
-                death: m.death,
-                photo: m.photo,
-                father_id: m.fatherId || '',
-                mother_id: m.motherId || '',
-                spouses: m.spouses || []
-            })));
-        
-        if (error) console.error('Gagal sync ke Supabase:', error);
-    }, 200);
   };
 
   const handleAdd = () => {
@@ -1278,7 +1286,7 @@ const App = () => {
   };
 
   const confirmResetApp = async () => {
-      localStorage.removeItem('familyData');
+      localStorage.setItem('familyData', '[]');
       localStorage.removeItem('familyAppConfig');
       
       // Hapus data di Supabase (Semua data di tabel)
