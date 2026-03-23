@@ -91,6 +91,11 @@ const LoginModal = ({ isOpen, onClose, onLoginSuccess }) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    if (!supabase) {
+      setError('Supabase tidak terhubung. Periksa konfigurasi API.');
+      setLoading(false);
+      return;
+    }
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -246,6 +251,7 @@ const App = () => {
   const [showLoginModal, setShowLoginModal] = useState(false);
 
   const fetchUserRole = useCallback(async (userId) => {
+    if (!supabase) return;
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -273,7 +279,7 @@ const App = () => {
   }, [user, userRole]);
 
   const fetchAllProfiles = useCallback(async () => {
-    if (userRole !== 'super_admin') return;
+    if (!supabase || userRole !== 'super_admin') return;
     setLoadingProfiles(true);
     try {
       const { data, error } = await supabase.from('profiles').select('*');
@@ -289,6 +295,7 @@ const App = () => {
   }, [userRole]);
 
   const updateProfileRole = async (profileId, newRole) => {
+    if (!supabase) return;
     const { error } = await supabase
       .from('profiles')
       .update({ role: newRole })
@@ -301,6 +308,8 @@ const App = () => {
 
   // Monitor Auth State
   useEffect(() => {
+    if (!supabase) return;
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       const u = session?.user ?? null;
       setUser(u);
@@ -327,7 +336,7 @@ const App = () => {
   }, [view, userRole, fetchAllProfiles]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    if (supabase) await supabase.auth.signOut();
     setUser(null);
     setUserRole(null);
     if (view === 'settings') setView('tree');
@@ -335,6 +344,10 @@ const App = () => {
 
   // Fungsi Fetch Data dari Supabase
   const fetchData = useCallback(async () => {
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
     try {
       const { data, error } = await supabase
         .from('family_members')
@@ -382,7 +395,7 @@ const App = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     fetchData();
@@ -399,6 +412,7 @@ const App = () => {
         }
 
         const syncToSupabase = async () => {
+            if (!supabase) return;
             try {
                 const { error } = await supabase
                     .from('family_members')
