@@ -150,6 +150,67 @@ body {
 
   h1 { font-size: 1.1rem !important; }
   .logo { display: none; }
+
+  /* Form & Modal Responsiveness */
+  .modal-content {
+    padding: 15px !important;
+    max-height: 98vh !important;
+  }
+
+  .form-grid-2 {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .profile-header-responsive {
+    flex-direction: column !important;
+    align-items: center !important;
+    text-align: center !important;
+    gap: 15px !important;
+  }
+
+  .profile-header-responsive .name-input-container {
+    width: 100% !important;
+  }
+
+  .spouse-entry-responsive {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .spouse-entry-responsive > div {
+    flex: 1 1 auto !important;
+    width: 100% !important;
+  }
+
+  .spouse-entry-responsive .btn-delete-spouse {
+    width: 100% !important;
+    justify-content: center !important;
+    margin-top: 5px !important;
+  }
+}
+
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
+.profile-header-responsive {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.spouse-entry-responsive {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  background: rgba(255,255,255,0.3);
+  border: 1px solid rgba(0,0,0,0.05);
+  border-radius: 8px;
 }
 
 /* UI Structure Helpers */
