@@ -147,70 +147,162 @@ body {
     justify-content: center;
     gap: 5px;
   }
-
-  h1 { font-size: 1.1rem !important; }
-  .logo { display: none; }
-
-  /* Form & Modal Responsiveness */
-  .modal-content {
-    padding: 15px !important;
-    max-height: 98vh !important;
-  }
-
-  .form-grid-2 {
-    grid-template-columns: 1fr !important;
-    gap: 10px !important;
-  }
-
-  .profile-header-responsive {
-    flex-direction: column !important;
-    align-items: center !important;
-    text-align: center !important;
-    gap: 15px !important;
-  }
-
-  .profile-header-responsive .name-input-container {
-    width: 100% !important;
-  }
-
-  .spouse-entry-responsive {
-    flex-direction: column !important;
-    align-items: stretch !important;
-  }
-
-  .spouse-entry-responsive > div {
-    flex: 1 1 auto !important;
-    width: 100% !important;
-  }
-
-  .spouse-entry-responsive .btn-delete-spouse {
-    width: 100% !important;
-    justify-content: center !important;
-    margin-top: 5px !important;
-  }
 }
 
-.form-grid-2 {
+/* Base Modal Styles (Desktop & Mobile) */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.6) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+.modal-container {
+  padding: 0 !important;
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+  max-height: 90vh !important;
+  background: var(--bg-card);
+  width: 100%;
+  max-width: 700px;
+  border-radius: 16px;
+}
+
+[data-theme='dark'] .modal-container {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.modal-header {
+  padding: 16px 20px !important;
+  border-bottom: 1px solid var(--border-card);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-header);
+  flex-shrink: 0;
+}
+
+.modal-body {
+  padding: 24px !important;
+  overflow-y: auto !important;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.modal-footer {
+  padding: 16px 20px !important;
+  border-top: 1px solid var(--border-card);
+  background: var(--bg-header);
+  display: flex;
+  justify-content: flex-end; /* Align to right on desktop */
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* Base Form Styling */
+.form-section {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-card);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.section-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 15px;
+  gap: 16px;
 }
 
-.profile-header-responsive {
-  display: flex;
-  align-items: center;
-  gap: 20px;
+.spouse-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 12px;
+  padding: 16px;
+  position: relative;
+  border-left: 4px solid var(--primary);
 }
 
-.spouse-entry-responsive {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  padding: 12px;
-  background: rgba(255,255,255,0.3);
-  border: 1px solid rgba(0,0,0,0.05);
-  border-radius: 8px;
+.spouse-card-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr auto;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+/* Mobile Overrides */
+@media (max-width: 768px) {
+  .modal-overlay {
+    padding: 0;
+  }
+
+  .modal-container {
+    width: 100% !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    border: none;
+  }
+
+  .modal-body {
+    padding: 16px !important;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .spouse-card-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px;
+  }
+
+  .modal-footer {
+    flex-direction: column-reverse;
+  }
+
+  .modal-footer .btn {
+    width: 100%;
+    justify-content: center;
+    padding: 14px !important;
+  }
 }
 
 /* UI Structure Helpers */
