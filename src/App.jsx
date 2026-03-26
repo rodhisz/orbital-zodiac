@@ -1192,7 +1192,7 @@ const App = () => {
 
   const getUpcomingBirthdays = () => {
     return familyMembers
-      .filter(m => m.birth) // Menampilkan Milad bagi yang sudah wafat (Haul/Mengenang)
+      .filter(m => m.birth && m.name.toLowerCase().includes(searchTerm.toLowerCase()))
       .map(m => ({ member: m, info: getNextOccurence(m.birth) }))
       .filter(x => x.info !== null)
       .sort((a,b) => a.info.daysLeft - b.info.daysLeft);
@@ -1202,7 +1202,6 @@ const App = () => {
     const records = [];
     const seen = new Set();
     familyMembers.forEach(m => {
-        // Hapus m.death check agar tetap bisa mengenang anniversary leluhur yang sudah wafat
         m.spouses?.forEach(s => {
             if (s.type === 'divorced' || !s.marriageDate) return;
             const spouseRecord = familyMembers.find(f => f.id === s.id);
@@ -1211,8 +1210,11 @@ const App = () => {
             const pairKey = [m.id, s.id].sort().join('-');
             if (!seen.has(pairKey)) {
                 seen.add(pairKey);
-                // Kita ambil info dari p1 (m) karena s.marriageDate sudah dipastikan ada di filter atas
-                records.push({ p1: m, p2: spouseRecord, info: getNextOccurence(s.marriageDate) });
+                // Filter matching either partner's name
+                if (m.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                    spouseRecord.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+                    records.push({ p1: m, p2: spouseRecord, info: getNextOccurence(s.marriageDate) });
+                }
             }
         });
     });
@@ -1389,10 +1391,17 @@ const App = () => {
     // Helper untuk menormalkan tanggal dari Excel (string atau serial number)
     const normalizeDate = (val) => {
         if (!val || val === 'null' || val === 'undefined') return '';
-        if (typeof val === 'number') {
-            const d = new Date(Math.round((val - 25569) * 86400 * 1000));
-            return d.toISOString().split('T')[0];
+        
+        // Cek jika val adalah angka murni (Excel Serial Date) atau string angka murni
+        if (!isNaN(val) && val !== '' && !val.toString().includes('-') && !val.toString().includes('/')) {
+            const numVal = parseFloat(val);
+            // Angka antara 1000 s/d 100000 kemungkinan besar adalah serial date Excel (1902 s/d 2173)
+            if (numVal > 1000 && numVal < 100000) {
+                const d = new Date(Math.round((numVal - 25569) * 86400 * 1000));
+                return d.toISOString().split('T')[0];
+            }
         }
+
         let str = val.toString().trim();
         if (!str) return '';
         
@@ -1427,32 +1436,68 @@ const App = () => {
         const wb = XLSX.read(bstr, {type: 'binary'});
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const rawData = XLSX.utils.sheet_to_json(ws);
         
-        const newData = rawData.map(row => {
-            const keys = Object.keys(row);
-            const spouseStr = (row['Pasangan(ID|Status|Tanggal)'] || row.Pasangan || '').toString();
+        // Gunakan header: 1 untuk mendapatkan array of arrays agar kita bisa deteksi header secara manual
+        const json = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        if (json.length < 1) return;
+
+        const headers = json[0].map(h => (h || '').toString().toLowerCase().trim());
+        const dataRows = json.slice(1);
+
+        // Map index kolom berdasarkan nama header yang mungkin
+        const idx = {
+            id: headers.findIndex(h => h === 'id'),
+            nama: headers.findIndex(h => h === 'nama' || h === 'name'),
+            gender: headers.findIndex(h => h.includes('kelamin') || h === 'gender'),
+            lahir: headers.findIndex(h => h.includes('lahir') || h === 'birth'),
+            wafat: headers.findIndex(h => h.includes('wafat') || h === 'death'),
+            ayah: headers.findIndex(h => h.includes('ayah') || h === 'father'),
+            ibu: headers.findIndex(h => h.includes('ibu') || h === 'mother'),
+            pasangan: headers.findIndex(h => h.includes('pasangan') || h === 'spouse')
+        };
+
+        const newData = dataRows.map((row, rowIdx) => {
+            if (!row || row.length === 0) return null;
+
+            const getVal = (i) => (i !== -1) ? row[i] : undefined;
+            const getStr = (i) => {
+                const v = getVal(i);
+                return (v !== undefined && v !== null) ? v.toString().trim() : '';
+            };
+
+            const id = stripM(getStr(idx.id) || `imported-${Date.now()}-${rowIdx}`);
+            const name = getStr(idx.nama) || 'Unknown';
+            
+            const gRaw = getStr(idx.gender).toLowerCase();
+            const gender = (gRaw.includes('p') || gRaw.includes('f')) ? 'female' : 'male';
+            
+            const birth = normalizeDate(getVal(idx.lahir));
+            const death = normalizeDate(getVal(idx.wafat));
+            const fatherId = stripM(getStr(idx.ayah));
+            const motherId = stripM(getStr(idx.ibu));
+
+            const spouseStr = getStr(idx.pasangan);
             const spousesArray = spouseStr ? spouseStr.split(',').map(s => {
                 const parts = s.trim().split('|');
                 return {
                     id: stripM(parts[0]),
-                    type: parts[1] || 'married',
+                    type: (parts[1] || 'married').toLowerCase(),
                     marriageDate: normalizeDate(parts[2] || '')
                 };
             }).filter(s => s.id) : [];
 
             return {
-                id: stripM(row.ID?.toString() || row[keys[0]]?.toString() || `${Date.now()}${(Math.random()*1000).toFixed(0)}`),
-                name: row.Nama || row[keys[1]] || 'Unknown',
-                gender: (row['JenisKelamin(male/female)'] || row.Gender || row[keys[2]] || 'male').toString().toLowerCase(),
-                birth: normalizeDate(row['Lahir(YYYY-MM-DD)'] || row.Lahir || row[keys[3]] || null),
-                death: normalizeDate(row['Wafat(YYYY-MM-DD)'] || row.Wafat || row[keys[4]] || null),
-                fatherId: stripM(row.ID_Ayah?.toString() || row.Ayah?.toString() || row[keys[5]]?.toString() || ''),
-                motherId: stripM(row.ID_Ibu?.toString() || row.Ibu?.toString() || row[keys[6]]?.toString() || ''),
+                id,
+                name,
+                gender,
+                birth,
+                death,
+                fatherId,
+                motherId,
                 spouses: spousesArray,
                 photo: ''
             };
-        });
+        }).filter(m => m !== null && m.name !== 'Unknown');
         
         if (newData.length > 0) {
             setImportPendingData(newData);
@@ -1464,7 +1509,14 @@ const App = () => {
   };
 
   const handleImportMerge = () => {
-    setFamilyMembers(prev => [...prev, ...importPendingData]);
+    setFamilyMembers(prev => {
+        const memberMap = new Map();
+        prev.forEach(m => memberMap.set(m.id.toString(), m));
+        importPendingData.forEach(m => {
+            memberMap.set(m.id.toString(), m); // Overwrite existing ID with new data
+        });
+        return Array.from(memberMap.values());
+    });
     setShowImportConfirm(false);
     setImportPendingData([]);
   };
@@ -1608,7 +1660,7 @@ const App = () => {
                 onEdgesChange={onEdgesChange}
                 nodeTypes={nodeTypes}
                 onNodeClick={(_, node) => {
-                  if (node.type === 'familyMember' && user) {
+                  if (node.type === 'familyMember') {
                     handleEdit(node.data);
                   }
                 }}
@@ -1753,7 +1805,8 @@ const App = () => {
           ) : (
             <motion.div key="table" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} style={{ padding: '20px', maxWidth: '1100px', margin: '0 auto', width: '100%' }}>
               
-              <div className="search-container-wrapper" style={{ marginBottom: '15px', maxWidth: '500px', width: '100%' }}>
+              <div className="table-action-row" style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '20px', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                <div className="search-container-wrapper" style={{ flex: 1, minWidth: '250px' }}>
                   <div style={{ position: 'relative', width: '100%' }}>
                       <input 
                         placeholder="Cari nama keluarga..." 
@@ -1764,23 +1817,24 @@ const App = () => {
                       />
                       <Search size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
                   </div>
-              </div>
+                </div>
 
-              <div className="table-action-row">
-                {user && (
-                  <button className="btn btn-primary" onClick={handleAdd}>
-                    <Plus size={16} /> <span className="btn-text">Tambah Anggota</span>
-                  </button>
-                )}
-                
-                <div className="table-tabs-container" style={{ display: 'flex', background: 'rgba(0,0,0,0.05)', padding: '4px', borderRadius: '12px', gap: '4px', marginLeft: 'auto', width: 'fit-content' }}>
-                    <button className={`btn ${tableTab === 'members' ? 'btn-primary' : 'glass'}`} onClick={() => setTableTab('members')}>Data Anggota</button>
-                    <button className={`btn ${tableTab === 'birthdays' ? 'btn-primary' : 'glass'}`} onClick={() => setTableTab('birthdays')}>
-                      🎂 <span className="desktop-label">Ulang Tahun</span><span className="mobile-label">Ultah</span>
+                <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  {user && (
+                    <button className="btn btn-primary" onClick={handleAdd}>
+                      <Plus size={16} /> <span className="btn-text">Tambah Anggota</span>
                     </button>
-                    <button className={`btn ${tableTab === 'anniversaries' ? 'btn-primary' : 'glass'}`} onClick={() => setTableTab('anniversaries')}>
-                      💍 <span className="desktop-label">Anniversary</span><span className="mobile-label">Aniv</span>
-                    </button>
+                  )}
+                  
+                  <div className="table-tabs-container" style={{ display: 'flex', background: 'rgba(0,0,0,0.05)', padding: '4px', borderRadius: '12px', gap: '4px', width: 'fit-content' }}>
+                      <button className={`btn ${tableTab === 'members' ? 'btn-primary' : 'glass'}`} onClick={() => setTableTab('members')}>Data Anggota</button>
+                      <button className={`btn ${tableTab === 'birthdays' ? 'btn-primary' : 'glass'}`} onClick={() => setTableTab('birthdays')}>
+                        🎂 <span className="desktop-label">Ulang Tahun</span><span className="mobile-label">Ultah</span>
+                      </button>
+                      <button className={`btn ${tableTab === 'anniversaries' ? 'btn-primary' : 'glass'}`} onClick={() => setTableTab('anniversaries')}>
+                        💍 <span className="desktop-label">Anniversary</span><span className="mobile-label">Aniv</span>
+                      </button>
+                  </div>
                 </div>
               </div>
 
@@ -1830,11 +1884,11 @@ const App = () => {
                           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                             {user ? (
                               <>
-                                <button className="btn glass" style={{ padding: '6px' }} onClick={() => handleEdit(m)}><Edit2 size={14} /></button>
-                                <button className="btn glass" style={{ padding: '6px', color: '#ef4444' }} onClick={() => handleDeleteData(m)}><Trash2 size={14} /></button>
+                                <button className="btn glass" style={{ padding: '6px' }} onClick={() => handleEdit(m)} title="Edit"><Edit2 size={14} /></button>
+                                <button className="btn glass" style={{ padding: '6px', color: '#ef4444' }} onClick={() => handleDeleteData(m)} title="Hapus"><Trash2 size={14} /></button>
                               </>
                             ) : (
-                              <span style={{ fontSize: '0.75rem', opacity: 0.5 }}><Lock size={12} /> Read-only</span>
+                              <button className="btn glass" style={{ padding: '6px' }} onClick={() => handleEdit(m)} title="Detail"><User size={14} /></button>
                             )}
                           </div>
                         </td>
@@ -1931,7 +1985,7 @@ const App = () => {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)', padding: '20px' }}>
           <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass" style={{ width: '100%', maxWidth: '600px', padding: '25px', color: 'var(--text-main)', maxHeight: '95vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <h2 style={{ fontSize: '1.25rem' }}>Edit Data Keluarga</h2>
+              <h2 style={{ fontSize: '1.25rem' }}>{user ? 'Edit Data Keluarga' : 'Detail Anggota Keluarga'}</h2>
               <button className="btn glass" style={{ padding: '8px' }} onClick={() => setEditingId(null)}><X size={20} /></button>
             </div>
 
@@ -1945,35 +1999,38 @@ const App = () => {
                       <User size={40} />
                     </div>
                   )}
-                  <label htmlFor="image-upload" style={{ position: 'absolute', bottom: 0, right: 0, background: 'var(--primary)', padding: '5px', borderRadius: '50%', cursor: 'pointer', color: 'white' }}>
-                    <Camera size={14} />
-                    <input id="image-upload" type="file" accept="image/*" hidden onChange={handleImageUpload} />
-                  </label>
+                  {user && (
+                    <label htmlFor="image-upload" style={{ position: 'absolute', bottom: 0, right: 0, background: 'var(--primary)', padding: '5px', borderRadius: '50%', cursor: 'pointer', color: 'white' }}>
+                      <Camera size={14} />
+                      <input id="image-upload" type="file" accept="image/*" hidden onChange={handleImageUpload} />
+                    </label>
+                  )}
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ fontSize: '0.75rem', opacity: 0.6 }}>Nama Lengkap</label>
-                  <input value={editBuffer.name} onChange={e => setEditBuffer({ ...editBuffer, name: e.target.value })} className="glass" style={{ width: '100%', padding: '10px', background: 'transparent', color: 'inherit' }} />
+                  <input readOnly={!user} value={editBuffer.name} onChange={e => setEditBuffer({ ...editBuffer, name: e.target.value })} className="glass" style={{ width: '100%', padding: '10px', background: 'transparent', color: 'inherit' }} />
                 </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
                 <div>
                   <label style={{ fontSize: '0.75rem', opacity: 0.6 }}>Jenis Kelamin</label>
-                  <select value={editBuffer.gender} onChange={e => setEditBuffer({ ...editBuffer, gender: e.target.value })} className="glass" style={{ width: '100%', padding: '10px', background: 'transparent', color: 'inherit' }}>
+                  <select disabled={!user} value={editBuffer.gender} onChange={e => setEditBuffer({ ...editBuffer, gender: e.target.value })} className="glass" style={{ width: '100%', padding: '10px', background: 'transparent', color: 'inherit' }}>
                     <option value="male">Laki-laki</option>
                     <option value="female">Perempuan</option>
                   </select>
                 </div>
                 <div>
                   <label style={{ fontSize: '0.75rem', opacity: 0.6 }}>Tanggal Lahir</label>
-                  <input type="date" value={editBuffer.birth} onChange={e => setEditBuffer({ ...editBuffer, birth: e.target.value })} className="glass" style={{ width: '100%', padding: '10px', background: 'transparent', color: 'inherit' }} />
+                  <input readOnly={!user} type="date" value={editBuffer.birth} onChange={e => setEditBuffer({ ...editBuffer, birth: e.target.value })} className="glass" style={{ width: '100%', padding: '10px', background: 'transparent', color: 'inherit' }} />
                 </div>
               </div>
 
               <div style={{ background: 'rgba(0,0,0,0.03)', padding: '15px', borderRadius: '10px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: editBuffer.isDeceased ? '10px' : 0 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: user ? 'pointer' : 'default', marginBottom: editBuffer.isDeceased ? '10px' : 0 }}>
                   <input 
                     type="checkbox" 
+                    disabled={!user}
                     checked={editBuffer.isDeceased} 
                     onChange={e => setEditBuffer({ ...editBuffer, isDeceased: e.target.checked, death: e.target.checked ? (editBuffer.death || '') : '' })}
                     style={{ width: '18px', height: '18px', accentColor: '#ef4444' }}
@@ -1983,7 +2040,7 @@ const App = () => {
                 {editBuffer.isDeceased && (
                   <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
                     <label style={{ fontSize: '0.75rem', opacity: 0.6 }}>Tanggal Wafat</label>
-                    <input type="date" value={editBuffer.death} onChange={e => setEditBuffer({ ...editBuffer, death: e.target.value })} className="glass" style={{ width: '100%', padding: '10px', background: 'transparent', color: 'inherit' }} />
+                    <input readOnly={!user} type="date" value={editBuffer.death} onChange={e => setEditBuffer({ ...editBuffer, death: e.target.value })} className="glass" style={{ width: '100%', padding: '10px', background: 'transparent', color: 'inherit' }} />
                   </motion.div>
                 )}
               </div>
@@ -1998,65 +2055,95 @@ const App = () => {
                   {/* Pasangan (Multi-Spouse & Divorce) */}
                   <div>
                     <label style={{ fontSize: '0.75rem', opacity: 0.6 }}>List Pasangan</label>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '5px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
                       {editBuffer.spouses?.map((s, idx) => (
-                        <div key={idx} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                          <select
-                            value={s.id}
-                            onChange={e => {
-                              const newSpouses = [...editBuffer.spouses];
-                              newSpouses[idx].id = e.target.value;
-                              setEditBuffer({ ...editBuffer, spouses: newSpouses });
-                            }}
-                            className="glass" style={{ flex: 2, padding: '8px', background: 'transparent', fontSize: '0.85rem' }}
-                          >
-                            <option value="">Pilih Pasangan</option>
-                            {familyMembers.filter(f => f.id !== editBuffer.id && f.gender !== editBuffer.gender).map(f => (
-                              <option key={f.id} value={f.id}>{f.name}</option>
-                            ))}
-                          </select>
-                          <input 
-                            type="date"
-                            value={s.marriageDate || ''}
-                            onChange={e => {
-                              const newSpouses = [...editBuffer.spouses];
-                              newSpouses[idx].marriageDate = e.target.value;
-                              setEditBuffer({ ...editBuffer, spouses: newSpouses });
-                            }}
-                            className="glass" style={{ flex: 1, padding: '8px', background: 'transparent', fontSize: '0.85rem' }}
-                            title="Tanggal Menikah"
-                          />
-                          <select
-                            value={s.type}
-                            onChange={e => {
-                              const newSpouses = [...editBuffer.spouses];
-                              newSpouses[idx].type = e.target.value;
-                              setEditBuffer({ ...editBuffer, spouses: newSpouses });
-                            }}
-                            className="glass" style={{ flex: 1, padding: '8px', background: 'transparent', fontSize: '0.85rem' }}
-                          >
-                            <option value="married">Menikah</option>
-                            <option value="divorced">Bercerai</option>
-                          </select>
-                          <button onClick={() => {
-                            const newSpouses = editBuffer.spouses.filter((_, i) => i !== idx);
-                            setEditBuffer({ ...editBuffer, spouses: newSpouses });
-                          }} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}><Trash2 size={16} /></button>
+                        <div key={idx} className="glass" style={{ 
+                          display: 'flex', 
+                          flexWrap: 'wrap', 
+                          gap: '10px', 
+                          alignItems: 'center', 
+                          padding: '12px', 
+                          background: 'rgba(255,255,255,0.3)',
+                          border: '1px solid rgba(0,0,0,0.05)'
+                        }}>
+                          <div style={{ flex: '2 1 200px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <span style={{ fontSize: '0.65rem', fontWeight: 600, opacity: 0.5, textTransform: 'uppercase' }}>Nama Pasangan</span>
+                            <select
+                              disabled={!user}
+                              value={s.id}
+                              onChange={e => {
+                                const newSpouses = [...editBuffer.spouses];
+                                newSpouses[idx].id = e.target.value;
+                                setEditBuffer({ ...editBuffer, spouses: newSpouses });
+                              }}
+                              className="glass" style={{ width: '100%', padding: '8px', background: 'transparent', fontSize: '0.85rem' }}
+                            >
+                              <option value="">Pilih Pasangan</option>
+                              {familyMembers.filter(f => f.id !== editBuffer.id && f.gender !== editBuffer.gender).map(f => (
+                                <option key={f.id} value={f.id}>{f.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div style={{ flex: '1 1 140px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <span style={{ fontSize: '0.65rem', fontWeight: 600, opacity: 0.5, textTransform: 'uppercase' }}>Tanggal Menikah</span>
+                            <input 
+                              readOnly={!user}
+                              type="date"
+                              value={s.marriageDate || ''}
+                              onChange={e => {
+                                const newSpouses = [...editBuffer.spouses];
+                                newSpouses[idx].marriageDate = e.target.value;
+                                setEditBuffer({ ...editBuffer, spouses: newSpouses });
+                              }}
+                              className="glass" style={{ width: '100%', padding: '8px', background: 'transparent', fontSize: '0.85rem' }}
+                            />
+                          </div>
+                          <div style={{ flex: '1 1 120px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <span style={{ fontSize: '0.65rem', fontWeight: 600, opacity: 0.5, textTransform: 'uppercase' }}>Status</span>
+                            <select
+                              disabled={!user}
+                              value={s.type}
+                              onChange={e => {
+                                const newSpouses = [...editBuffer.spouses];
+                                newSpouses[idx].type = e.target.value;
+                                setEditBuffer({ ...editBuffer, spouses: newSpouses });
+                              }}
+                              className="glass" style={{ width: '100%', padding: '8px', background: 'transparent', fontSize: '0.85rem' }}
+                            >
+                              <option value="married">Menikah</option>
+                              <option value="divorced">Bercerai</option>
+                            </select>
+                          </div>
+                          {user && (
+                            <button 
+                              onClick={() => {
+                                const newSpouses = editBuffer.spouses.filter((_, i) => i !== idx);
+                                setEditBuffer({ ...editBuffer, spouses: newSpouses });
+                              }} 
+                              className="btn glass"
+                              style={{ padding: '10px', color: '#ef4444', marginTop: 'auto' }}
+                              title="Hapus Pasangan"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
                         </div>
                       ))}
-                      <button
-                        onClick={() => setEditBuffer({ ...editBuffer, spouses: [...(editBuffer.spouses || []), { id: '', type: 'married' }] })}
-                        className="btn glass" style={{ fontSize: '0.75rem', padding: '5px 10px', width: 'fit-content' }}
-                      >
-                        <Plus size={12} /> Tambah Pasangan
-                      </button>
+                      {user && (
+                        <button
+                          onClick={() => setEditBuffer({ ...editBuffer, spouses: [...(editBuffer.spouses || []), { id: '', type: 'married' }] })}
+                          className="btn glass" style={{ fontSize: '0.75rem', padding: '5px 10px', width: 'fit-content' }}
+                        >
+                          <Plus size={12} /> Tambah Pasangan
+                        </button>
+                      )}
                     </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>
                     <div>
                       <label style={{ fontSize: '0.75rem', opacity: 0.6 }}>Ayah Kandung</label>
-                      <select value={editBuffer.fatherId || ''} onChange={e => setEditBuffer({ ...editBuffer, fatherId: e.target.value })} className="glass" style={{ width: '100%', padding: '10px', background: 'transparent', color: 'inherit' }}>
+                      <select disabled={!user} value={editBuffer.fatherId || ''} onChange={e => setEditBuffer({ ...editBuffer, fatherId: e.target.value })} className="glass" style={{ width: '100%', padding: '10px', background: 'transparent', color: 'inherit' }}>
                         <option value="">Tidak Diketahui</option>
                         {familyMembers.filter(f => f.id !== editBuffer.id && f.gender === 'male').map(f => (
                           <option key={f.id} value={f.id}>{f.name}</option>
@@ -2065,7 +2152,7 @@ const App = () => {
                     </div>
                     <div>
                       <label style={{ fontSize: '0.75rem', opacity: 0.6 }}>Ibu Kandung</label>
-                      <select value={editBuffer.motherId || ''} onChange={e => setEditBuffer({ ...editBuffer, motherId: e.target.value })} className="glass" style={{ width: '100%', padding: '10px', background: 'transparent', color: 'inherit' }}>
+                      <select disabled={!user} value={editBuffer.motherId || ''} onChange={e => setEditBuffer({ ...editBuffer, motherId: e.target.value })} className="glass" style={{ width: '100%', padding: '10px', background: 'transparent', color: 'inherit' }}>
                         <option value="">Tidak Diketahui</option>
                         {familyMembers.filter(f => f.id !== editBuffer.id && f.gender === 'female').map(f => (
                           <option key={f.id} value={f.id}>{f.name}</option>
@@ -2077,10 +2164,12 @@ const App = () => {
               </div>
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
-                <button className="btn btn-primary" style={{ flex: 1, padding: '12px' }} onClick={handleSave}>
-                  <Save size={18} /> Simpan Data
-                </button>
-                <button className="btn glass" style={{ padding: '12px' }} onClick={() => setEditingId(null)}>Batal</button>
+                {user && (
+                  <button className="btn btn-primary" style={{ flex: 1, padding: '12px' }} onClick={handleSave}>
+                    <Save size={18} /> Simpan Data
+                  </button>
+                )}
+                <button className="btn glass" style={{ flex: user ? '0.3' : '1', padding: '12px' }} onClick={() => setEditingId(null)}>{user ? 'Batal' : 'Tutup'}</button>
               </div>
             </div>
           </motion.div>
