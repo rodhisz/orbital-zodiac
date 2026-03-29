@@ -235,7 +235,8 @@ const App = () => {
       appName: 'Fam Tree',
       tagline: 'Manajemen Nasab Dinamis',
       logoMode: 'icon',
-      logoUrl: ''
+      logoUrl: '',
+      isPrivate: true // Default to private for security
     };
   });
   
@@ -385,9 +386,6 @@ const App = () => {
           
           if (insertError) console.error('Gagal migrasi data:', insertError);
           setFamilyMembers(toUpload);
-        } else {
-          // Jika DB kosong dan belum login, tampilkan data lokal saja
-          setFamilyMembers(toUpload);
         }
       }
     } catch (err) {
@@ -395,7 +393,7 @@ const App = () => {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, appConfig.isPrivate]);
 
   useEffect(() => {
     fetchData();
@@ -1570,6 +1568,56 @@ const App = () => {
       window.location.reload();
   };
 
+  const isGuestRestricted = appConfig.isPrivate && !user;
+
+  if (loading) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-main)', color: 'var(--text-main)' }}>
+        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} style={{ width: '40px', height: '40px', border: '3px solid var(--primary)', borderTopColor: 'transparent', borderRadius: '50%' }} />
+      </div>
+    );
+  }
+
+  // Lock Screen for Private Tree
+  if (isGuestRestricted) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-main)', color: 'var(--text-main)', padding: '20px' }}>
+        <div style={{ position: 'fixed', top: '20px', right: '20px' }}>
+          <button className="btn glass" onClick={toggleTheme}>
+            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+          </button>
+        </div>
+        
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }} 
+          animate={{ opacity: 1, y: 0 }} 
+          className="glass" 
+          style={{ maxWidth: '450px', width: '100%', padding: '40px', textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.1)' }}
+        >
+          <div style={{ background: 'var(--primary)', color: 'white', width: '70px', height: '70px', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 25px', boxShadow: '0 10px 20px rgba(99, 102, 241, 0.3)' }}>
+            <Lock size={32} />
+          </div>
+          <h1 style={{ fontSize: '1.8rem', fontWeight: 800, marginBottom: '10px' }}>{appConfig.appName}</h1>
+          <p style={{ opacity: 0.7, marginBottom: '30px', lineHeight: '1.6' }}>
+            Silsilah keluarga ini bersifat <strong>Privat</strong>. <br />
+            Silakan login sebagai admin atau pengelola untuk melihat data lengkap keluarga.
+          </p>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <button className="btn btn-primary" style={{ width: '100%', padding: '14px', justifyContent: 'center', fontSize: '1rem' }} onClick={() => setShowLoginModal(true)}>
+              <LogIn size={20} /> Login Admin
+            </button>
+            <div style={{ fontSize: '0.8rem', opacity: 0.5, marginTop: '10px' }}>
+              &copy; {new Date().getFullYear()} {appConfig.appName} • Protected Access
+            </div>
+          </div>
+        </motion.div>
+
+        <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLoginSuccess={setUser} />
+      </div>
+    );
+  }
+
   return (
     <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw' }}>
       <header className="glass" style={{ margin: '20px', padding: '15px 30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 100 }}>
@@ -1704,6 +1752,32 @@ const App = () => {
                            <img src={appConfig.logoUrl} style={{ width: '40px', height: '40px', borderRadius: '8px', objectFit: 'cover', border: '1px solid var(--border-card)' }} />
                         </div>
                     )}
+                  </div>
+
+                  <hr style={{ borderColor: 'var(--border-card)', margin: '20px 0' }} />
+                  
+                  <div style={{ background: 'rgba(99, 102, 241, 0.05)', padding: '20px', borderRadius: '12px', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
+                      <h3 style={{ marginBottom: '10px', fontSize: '1.1rem', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Lock size={18} /> Privasi & Keamanan Silsilah
+                      </h3>
+                      <p style={{ fontSize: '0.85rem', opacity: 0.8, marginBottom: '15px' }}>
+                        Aktifkan mode privat untuk menyembunyikan silsilah keluarga dari pengunjung umum. Hanya pengguna yang login (Admin) yang dapat melihat data.
+                      </p>
+                      <label className="glass" style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', padding: '15px' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={appConfig.isPrivate} 
+                          onChange={e => setAppConfig({...appConfig, isPrivate: e.target.checked})}
+                          style={{ width: '20px', height: '20px', accentColor: 'var(--primary)' }}
+                        />
+                        <div>
+                          <span style={{ fontWeight: 700, display: 'block' }}>Mode Privat Aktif</span>
+                          <span style={{ fontSize: '0.7rem', opacity: 0.6 }}>Hanya Admin yang dapat mengakses data silsilah</span>
+                        </div>
+                      </label>
+                      <p style={{ fontSize: '0.7rem', color: 'var(--primary)', marginTop: '12px', fontWeight: 500 }}>
+                        ✓ Nama seperti "Ahmad Zaki Yasin" tidak akan terindeks oleh mesin pencari (Google).
+                      </p>
                   </div>
 
                   <hr style={{ borderColor: 'var(--border-card)', margin: '20px 0' }} />
